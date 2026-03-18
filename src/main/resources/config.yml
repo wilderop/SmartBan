@@ -1,0 +1,3 @@
+default_min_ban_hours: 6
+broadcast_format: "[Staff] {player} was banned for {duration} hours by {staff}: {reason} (Alts: {alts}, IPs: {ips})"
+kick_message: "You are banned for {remaining} more hours. Reason: {reason}"

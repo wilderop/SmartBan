@@ -1,0 +1,66 @@
+name: SmartBan
+version: 1.0
+main: com.example.smartban.SmartBanPlugin
+api-version: '1.21'
+commands:
+  ban:
+    description: Ban a player with escalating duration.
+    usage: /ban <player> <reason...>
+    permission: smartban.ban
+  unban:
+    description: Unban a player, removing the most recent ban from escalation count.
+    usage: /unban <player> <reason...>
+    aliases: [pardon]
+    permission: smartban.unban
+  banreport:
+    description: View ban history for a player.
+    usage: /banreport <player>
+    permission: smartban.report
+  altlink:
+    description: Manually link two players as alts.
+    usage: /altlink <player1> <player2>
+    permission: smartban.altmanage
+  altdelink:
+    description: Manually delink two players as alts.
+    usage: /altdelink <player1> <player2>
+    permission: smartban.altmanage
+  altlist:
+    description: List all connected alts for a player.
+    usage: /altlist <player>
+    permission: smartban.altmanage
+  addip:
+    description: Manually add an IP to a player (associates with alts too).
+    usage: /addip <player> <ip>
+    permission: smartban.ipmanage
+  removeip:
+    description: Remove an IP from a player's history.
+    usage: /removeip <player> <ip>
+    permission: smartban.ipmanage
+  ipunban:
+    description: Unban a specific IP.
+    usage: /ipunban <ip> <reason...>
+    permission: smartban.ipmanage
+  iplist:
+    description: List historical IPs for a player.
+    usage: /iplist <player>
+    permission: smartban.ipmanage
+  warn:
+    description: Warn a player (recorded in ban history)
+    usage: /warn <player> <reason...>
+    permission: smartban.warn
+
+permissions:
+  smartban.ban:
+    default: op
+  smartban.unban:
+    default: op
+  smartban.report:
+    default: op
+  smartban.altmanage:
+    default: op
+  smartban.ipmanage:
+    default: op
+  smartban.notify:
+    default: op
+  smartban.warn:
+    default: op

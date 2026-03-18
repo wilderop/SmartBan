@@ -1,0 +1,10 @@
+
+/target/
+/build/
+/*.jar
+/*.class
+/.gradle/
+/.idea/
+/*.iml
+/config.yml
+*.log
