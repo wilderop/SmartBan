@@ -108,8 +108,8 @@ public class SmartBanPlugin extends JavaPlugin implements Listener {
         File dbFile = new File(dataFolder, "bans.h2.db");
 
         HikariConfig hikariConfig = new HikariConfig();
-        // This format works reliably with H2 2.2.224 on Linux servers
-        hikariConfig.setJdbcUrl("jdbc:h2:" + dbFile.getAbsolutePath() + ";LOCK_TIMEOUT=1000;MVCC=TRUE");
+        // This is the format that works reliably with H2 2.2.224 on Linux
+        hikariConfig.setJdbcUrl("jdbc:h2:./" + dbFile.getPath());
         hikariConfig.setDriverClassName("com.example.smartban.h2.Driver");
         hikariConfig.setMaximumPoolSize(4);
         hikariConfig.setMinimumIdle(1);
