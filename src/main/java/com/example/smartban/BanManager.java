@@ -24,7 +24,7 @@ public class BanManager {
 
         long now = System.currentTimeMillis();
 
-        // Record ban for target + alts
+        // Record the ban for target + all alts
         for (UUID uuid : alts) {
             recordBanOrWarn(uuid, staffUuid, now, durationHours, reason, "BAN");
         }
@@ -40,7 +40,7 @@ public class BanManager {
             }
         }
 
-        // Build broadcast message with real data
+        // Build broadcast with real data
         String playerName = altManager.getPlayerName(targetUuid);
         String staffName = altManager.getPlayerName(staffUuid);
         String altsStr = alts.stream()
@@ -61,9 +61,9 @@ public class BanManager {
                 .replace("{alts}", altsStr)
                 .replace("{ips}", ipsStr);
 
-        // Send only to staff (smartban.notify permission)
+        // Send broadcast only to operators
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p.hasPermission("smartban.notify")) {
+            if (p.isOp()) {
                 p.sendMessage(broadcast);
             }
         }
@@ -77,13 +77,13 @@ public class BanManager {
             recordBanOrWarn(uuid, staffUuid, now, 0, reason, "WARN");
         }
 
-        String staffName = altManager.getPlayerName(staffUuid);
         String playerName = altManager.getPlayerName(targetUuid);
+        String staffName = altManager.getPlayerName(staffUuid);
         String msg = "§e[Warning] §f" + playerName + " was warned by " + staffName + ": " + reason;
 
-        // Send only to staff
+        // Send warning message only to operators
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p.hasPermission("smartban.notify")) {
+            if (p.isOp()) {
                 p.sendMessage(msg);
             }
         }
@@ -135,7 +135,7 @@ public class BanManager {
             }
         }
         if (!success) {
-            plugin.getLogger().severe("Failed to record " + actionType + " after retries for " + uuid);
+            plugin.getLogger().severe("Failed to record " + actionType + " after " + maxRetries + " retries for " + uuid);
         }
     }
 
