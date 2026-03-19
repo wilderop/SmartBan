@@ -1,9 +1,9 @@
 package com.example.smartban;
 
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 
 import java.sql.*;
-import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -24,17 +24,49 @@ public class BanManager {
 
         long now = System.currentTimeMillis();
 
+        // Record ban for target + alts
         for (UUID uuid : alts) {
             recordBanOrWarn(uuid, staffUuid, now, durationHours, reason, "BAN");
         }
 
-        String broadcast = plugin.getPluginConfig().getString("broadcast_format", "[Staff] {player} was banned for {duration} hours by {staff}: {reason} (Alts: {alts})")
-                .replace("{player}", altManager.getPlayerName(targetUuid))
+        // Kick all online alts immediately
+        for (UUID uuid : alts) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null && player.isOnline()) {
+                String kickMsg = plugin.getPluginConfig().getString("kick_message", "You are banned for {remaining} more hours. Reason: {reason}")
+                        .replace("{remaining}", String.valueOf(durationHours))
+                        .replace("{reason}", reason != null ? reason : "No reason provided");
+                player.kickPlayer(kickMsg);
+            }
+        }
+
+        // Build broadcast message with real data
+        String playerName = altManager.getPlayerName(targetUuid);
+        String staffName = altManager.getPlayerName(staffUuid);
+        String altsStr = alts.stream()
+                .map(altManager::getPlayerName)
+                .collect(Collectors.joining(", "));
+
+        Set<String> allIps = new HashSet<>();
+        for (UUID uuid : alts) {
+            allIps.addAll(altManager.getIps(uuid));
+        }
+        String ipsStr = allIps.isEmpty() ? "None" : String.join(", ", allIps);
+
+        String broadcast = plugin.getPluginConfig().getString("broadcast_format", "[Staff] {player} was banned for {duration} hours by {staff}: {reason} (Alts: {alts}, IPs: {ips})")
+                .replace("{player}", playerName)
                 .replace("{duration}", String.valueOf(durationHours))
-                .replace("{staff}", altManager.getPlayerName(staffUuid))
+                .replace("{staff}", staffName)
                 .replace("{reason}", reason)
-                .replace("{alts}", alts.stream().map(altManager::getPlayerName).collect(Collectors.joining(", ")));
-        plugin.getServer().broadcastMessage(broadcast);
+                .replace("{alts}", altsStr)
+                .replace("{ips}", ipsStr);
+
+        // Send only to staff (smartban.notify permission)
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (p.hasPermission("smartban.notify")) {
+                p.sendMessage(broadcast);
+            }
+        }
     }
 
     public void recordWarning(UUID targetUuid, UUID staffUuid, String reason) {
@@ -45,10 +77,12 @@ public class BanManager {
             recordBanOrWarn(uuid, staffUuid, now, 0, reason, "WARN");
         }
 
-        String msg = "§e[Warning] §f" + altManager.getPlayerName(targetUuid) + " was warned by " +
-                (staffUuid.equals(UUID.randomUUID()) ? "Console" : altManager.getPlayerName(staffUuid)) +
-                ": " + reason;
-        for (org.bukkit.entity.Player p : plugin.getServer().getOnlinePlayers()) {
+        String staffName = altManager.getPlayerName(staffUuid);
+        String playerName = altManager.getPlayerName(targetUuid);
+        String msg = "§e[Warning] §f" + playerName + " was warned by " + staffName + ": " + reason;
+
+        // Send only to staff
+        for (Player p : Bukkit.getOnlinePlayers()) {
             if (p.hasPermission("smartban.notify")) {
                 p.sendMessage(msg);
             }
@@ -83,35 +117,25 @@ public class BanManager {
                 break;
             } catch (SQLException e) {
                 if (conn != null) {
-                    try {
-                        conn.rollback();
-                    } catch (SQLException re) {
-                        plugin.getLogger().severe("Rollback failed during " + actionType + ": " + re.getMessage());
-                    }
+                    try { conn.rollback(); } catch (SQLException ignored) {}
                 }
                 if (e.getErrorCode() != 90031 && e.getErrorCode() != 23505) {
                     plugin.getLogger().severe("Failed to record " + actionType + " for " + uuid + ": " + e.getMessage());
                     return;
                 }
-                plugin.getLogger().warning("DB busy on " + actionType + " insert — retrying...");
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                try { Thread.sleep(delayMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
                 delayMs *= 2;
             } finally {
                 if (conn != null) {
                     try {
                         conn.setAutoCommit(true);
                         conn.close();
-                    } catch (SQLException ignored) {
-                    }
+                    } catch (SQLException ignored) {}
                 }
             }
         }
         if (!success) {
-            plugin.getLogger().severe("Failed to record " + actionType + " after " + maxRetries + " retries for " + uuid);
+            plugin.getLogger().severe("Failed to record " + actionType + " after retries for " + uuid);
         }
     }
 
@@ -141,34 +165,6 @@ public class BanManager {
             } catch (SQLException e) {
                 plugin.getLogger().severe("Failed to record pardon for " + uuid + ": " + e.getMessage());
             }
-        }
-    }
-
-    public void unbanIp(String ip, String reason) {
-        long now = System.currentTimeMillis();
-
-        try (Connection conn = plugin.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "UPDATE ip_bans SET active = FALSE WHERE ip = ? AND active = TRUE")) {
-            stmt.setString(1, ip);
-            stmt.executeUpdate();
-            plugin.getLogger().info("IP " + ip + " was unbanned (reason: " + reason + ")");
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to unban IP " + ip + ": " + e.getMessage());
-        }
-    }
-
-    public boolean isIpBanned(String ip) {
-        try (Connection conn = plugin.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT 1 FROM ip_bans WHERE ip = ? AND active = TRUE " +
-                     "AND (duration_hours = 0 OR timestamp + duration_hours * 3600000 > ?) LIMIT 1")) {
-            stmt.setString(1, ip);
-            stmt.setLong(2, System.currentTimeMillis());
-            return stmt.executeQuery().next();
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to check IP ban status for " + ip + ": " + e.getMessage());
-            return false;
         }
     }
 
@@ -221,23 +217,49 @@ public class BanManager {
 
     public int getActiveBanCountForGroup(Set<UUID> group) {
         int count = 0;
-        try (Connection conn = plugin.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT COUNT(*) FROM bans WHERE uuid IN (" +
-                             String.join(",", Collections.nCopies(group.size(), "?")) +
-                             ") AND active = TRUE AND action_type = 'BAN'")) {
-            int i = 1;
-            for (UUID u : group) {
-                stmt.setString(i++, u.toString());
-            }
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                count = rs.getInt(1);
+        try (Connection conn = plugin.getConnection()) {
+            String placeholders = String.join(",", Collections.nCopies(group.size(), "?"));
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT COUNT(*) FROM bans WHERE uuid IN (" + placeholders + ") AND active = TRUE AND action_type = 'BAN'")) {
+                int i = 1;
+                for (UUID u : group) {
+                    stmt.setString(i++, u.toString());
+                }
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    count = rs.getInt(1);
+                }
             }
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to count active bans: " + e.getMessage());
         }
         return count;
+    }
+
+    public boolean isIpBanned(String ip) {
+        try (Connection conn = plugin.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT 1 FROM ip_bans WHERE ip = ? AND active = TRUE " +
+                     "AND (duration_hours = 0 OR timestamp + duration_hours * 3600000 > ?) LIMIT 1")) {
+            stmt.setString(1, ip);
+            stmt.setLong(2, System.currentTimeMillis());
+            return stmt.executeQuery().next();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to check IP ban status for " + ip + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    public void unbanIp(String ip, String reason) {
+        try (Connection conn = plugin.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "UPDATE ip_bans SET active = FALSE WHERE ip = ? AND active = TRUE")) {
+            stmt.setString(1, ip);
+            stmt.executeUpdate();
+            plugin.getLogger().info("IP " + ip + " was unbanned (reason: " + reason + ")");
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to unban IP " + ip + ": " + e.getMessage());
+        }
     }
 
     public List<String> getBanReport(UUID targetUuid) {
@@ -249,7 +271,7 @@ public class BanManager {
         for (UUID uuid : alts) {
             allIps.addAll(altManager.getIps(uuid));
         }
-        String ipsStr = String.join(", ", allIps);
+        String ipsStr = allIps.isEmpty() ? "None" : String.join(", ", allIps);
 
         report.add("§6Ban/Warn Report for §e" + altManager.getPlayerName(targetUuid));
         report.add("§7Alts: §f" + altsStr);
@@ -258,6 +280,7 @@ public class BanManager {
                 "§cBanned (Remaining: " + (getRemainingBanTime(targetUuid) / 3600000) + " hours)" : "§aNot Banned"));
 
         Map<Long, String> history = new TreeMap<>();
+
         try (Connection conn = plugin.getConnection()) {
             // Bans & Warnings
             try (PreparedStatement stmt = conn.prepareStatement(
